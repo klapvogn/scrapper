@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Universal Scraper for Bunkr, Pixeldrain and Simpcity Forums, viralthots.tv
+Universal Scraper for Bunkr, Pixeldrain, and Simpcity Forums, viralthots.tv
 Requires: pip install playwright aiohttp beautifulsoup4 tqdm aiofiles requests pillow
           playwright install chromium
 """
@@ -41,7 +41,7 @@ class UniversalScraper:
         
         # Load API key from environment if not provided
         if not self.pixeldrain_api_key:
-            self.pixeldrain_api_key = os.getenv('25a95570-0238-4b69-ad06-1303c6a31c48')
+            self.pixeldrain_api_key = os.getenv('PIXELDRAIN_API_KEY')
         
         if self.pixeldrain_api_key:
             print(f"🔑 Using Pixeldrain API key: {self.pixeldrain_api_key[:8]}...")
@@ -683,7 +683,14 @@ class ForumImageDownloader:
     
     def __init__(self, output_dir: str = "downloads", debug_mode: bool = False):
         self.session = requests.Session()
-        self.cookie_file = 'forum_cookies.txt'
+        
+        # Create cookies directory if it doesn't exist (safety net)
+        self.cookies_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'cookies')
+        if not os.path.exists(self.cookies_dir):
+            os.makedirs(self.cookies_dir)
+            # Don't print message here since main() already did it
+        
+        self.cookie_file = os.path.join(self.cookies_dir, 'forum_cookies.txt')
         self.download_path = output_dir
         self.debug_mode = debug_mode
         self.headers = {
@@ -2336,6 +2343,13 @@ async def main():
     parser.add_argument('--debug', action='store_true', help='Enable debug mode for forum scraper')
     
     args = parser.parse_args()
+    
+    # Create cookies directory at startup (for forum scraper)
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    cookies_dir = os.path.join(script_dir, 'cookies')
+    if not os.path.exists(cookies_dir):
+        os.makedirs(cookies_dir)
+        print(f"✓ Created cookies directory: {cookies_dir}\n")
     
     print("=" * 70)
     print("UNIVERSAL SCRAPER")
