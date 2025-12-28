@@ -17,14 +17,14 @@ A Python-based scraper that downloads images and videos from Bunkr, Pixeldrain, 
 ## 📋 Table of Contents
 
 - [Features](#-features)
-- [Quick Start](#quick-start)
-- [System Requirements](#system-requirements)
-- [Detailed Installation](#detailed-installation)
-- [Usage](#usage)
-- [Supported Sites](#supported-sites)
-- [Advanced Features](#advanced-features)
-- [Troubleshooting](#troubleshooting)
-- [FAQ](#faq)
+- [Quick Start](#-quick-start)
+- [System Requirements](#-system-requirements)
+- [Detailed Installation](#-detailed-installation)
+- [Usage](#-usage)
+- [Supported Sites](#-supported-sites)
+- [Advanced Features](#-advanced-features)
+- [Troubleshooting](#-troubleshooting)
+- [FAQ](#-faq)
 
 ---
 
@@ -1326,5 +1326,6 @@ The authors:
 
 
 *Remember: With great power comes great responsibility. Use wisely.*
+
 
 
