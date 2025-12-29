@@ -1095,13 +1095,18 @@ class ForumImageDownloader:
             if page_param_match:
                 page_num = int(page_param_match.group(1))
             else:
-                path_match = re.search(r'/(?:page/|p/)?(\d+)/', url)
-                if path_match:
-                    page_num = int(path_match.group(1))
+                # Check for /page-N format (with dash) - e.g., /page-4
+                dash_match = re.search(r'/page-(\d+)(?:/|$)', url, re.IGNORECASE)
+                if dash_match:
+                    page_num = int(dash_match.group(1))
                 else:
-                    end_match = re.search(r'/(\d+)$', url)
-                    if end_match:
-                        page_num = int(end_match.group(1))
+                    path_match = re.search(r'/(?:page/|p/)?(\d+)/', url)
+                    if path_match:
+                        page_num = int(path_match.group(1))
+                    else:
+                        end_match = re.search(r'/(\d+)$', url)
+                        if end_match:
+                            page_num = int(end_match.group(1))
             
             page_data.append((page_num, url))
         
@@ -1863,6 +1868,46 @@ class GenericGalleryDownloader:
         
         return video_urls
     
+    def extract_main_video_only(self, html_content, base_url):
+        """Extract only the main video from a single video page (not thumbnails from 'More Videos')"""
+        video_urls = set()
+        
+        # PRIORITY 1: Main video player sources (these are the actual video files)
+        main_video_patterns = [
+            # HTML5 video tags in the main player
+            r"<video[^>]+src=[\"'](https?://[^\"']+)[\"']",
+            r"<source[^>]+src=[\"'](https?://[^\"']+\.(?:mp4|webm|mov|avi|mkv))[\"']",
+            # Video URLs in JavaScript player configs
+            r"video_url\s*[:=]\s*[\"']([^\"']+\.(?:mp4|webm|mov))[\"']",
+            r"source\s*[:=]\s*[\"']([^\"']+\.(?:mp4|webm|mov))[\"']",
+            r"file\s*[:=]\s*[\"']([^\"']+\.(?:mp4|webm|mov))[\"']",
+            # JSON-style video configs
+            r'"url"\s*:\s*"([^"]+\.(?:mp4|webm|mov))"',
+            r'"source"\s*:\s*"([^"]+\.(?:mp4|webm|mov))"',
+            r'"file"\s*:\s*"([^"]+\.(?:mp4|webm|mov))"',
+        ]
+        
+        for pattern in main_video_patterns:
+            matches = re.findall(pattern, html_content, re.IGNORECASE)
+            for match in matches:
+                if match and len(match) > 15 and not match.startswith('data:'):
+                    # Normalize URL
+                    if match.startswith('//'):
+                        match = 'https:' + match
+                    elif match.startswith('/'):
+                        match = urljoin(base_url, match)
+                    
+                    # Skip player scripts and thumbnails
+                    if not any(skip in match.lower() for skip in ['player.js', 'analytics', 'ads', '.js', '.css', 'thumb', 'preview']):
+                        video_urls.add(match)
+        
+        # PRIORITY 2: Check iframe embeds for video
+        if not video_urls:
+            iframe_videos = self.extract_from_embed_pages(html_content, base_url)
+            video_urls.update(iframe_videos)
+        
+        return video_urls
+    
     def extract_images_from_gallery(self, html_content, base_url):
         """Specialized extraction for gallery sites - includes images AND videos"""
         img_urls = set()
@@ -2036,28 +2081,35 @@ class GenericGalleryDownloader:
             response = self.session.get(url, headers=self.headers, timeout=30)
             response.raise_for_status()
             
-            # Check if it's a gallery or video site
-            is_gallery = any(keyword in url.lower() for keyword in 
-                           ['viralthots.tv', 'album', 'gallery', 'photos', 'video'])
+            # Check if it's a SINGLE VIDEO page (not gallery)
+            is_single_video = '/video/' in url.lower()
             
-            if is_gallery:
-                print("✓ Detected gallery/video site, using specialized extraction...")
-                img_urls = self.extract_images_from_gallery(response.text, url)
-                
-                # Also check for iframe embeds
-                embed_videos = self.extract_from_embed_pages(response.text, url)
-                if embed_videos:
-                    print(f"  ✓ Extracted {len(embed_videos)} video(s) from iframe embeds")
-                    img_urls = img_urls.union(embed_videos)
+            if is_single_video:
+                print("✓ Detected single video page - extracting main video only (no thumbnails)...")
+                img_urls = self.extract_main_video_only(response.text, url)
             else:
-                print("✓ Using generic media extraction...")
-                img_urls = self.extract_images_generic(response.text, url)
+                # Check if it's a gallery or video site
+                is_gallery = any(keyword in url.lower() for keyword in 
+                               ['viralthots.tv', 'album', 'gallery', 'photos'])
                 
-                # Also check for iframe embeds
-                embed_videos = self.extract_from_embed_pages(response.text, url)
-                if embed_videos:
-                    print(f"  ✓ Extracted {len(embed_videos)} video(s) from iframe embeds")
-                    img_urls = img_urls.union(embed_videos)
+                if is_gallery:
+                    print("✓ Detected gallery/video site, using specialized extraction...")
+                    img_urls = self.extract_images_from_gallery(response.text, url)
+                    
+                    # Also check for iframe embeds
+                    embed_videos = self.extract_from_embed_pages(response.text, url)
+                    if embed_videos:
+                        print(f"  ✓ Extracted {len(embed_videos)} video(s) from iframe embeds")
+                        img_urls = img_urls.union(embed_videos)
+                else:
+                    print("✓ Using generic media extraction...")
+                    img_urls = self.extract_images_generic(response.text, url)
+                    
+                    # Also check for iframe embeds
+                    embed_videos = self.extract_from_embed_pages(response.text, url)
+                    if embed_videos:
+                        print(f"  ✓ Extracted {len(embed_videos)} video(s) from iframe embeds")
+                        img_urls = img_urls.union(embed_videos)
             
             # Try to get higher resolution versions
             if img_urls:
