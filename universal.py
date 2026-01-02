@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 """
-Universal Scraper for Bunkr, Pixeldrain, and Simpcity Forums, viralthots.tv
+Universal Scraper for Bunkr, Pixeldrain, and Simpcity Forums, viralthots.tv, coomer.st, Fapello, Pixhost, Kemono
+
 Requires: pip install playwright aiohttp beautifulsoup4 tqdm aiofiles requests pillow
-          playwright install chromium
+
+Do the below AFTER you have installed the ABOVE
+
+playwright install chromium
 """
 import asyncio
 import os
@@ -41,12 +45,9 @@ class UniversalScraper:
         
         # Load API key from environment if not provided
         if not self.pixeldrain_api_key:
-            self.pixeldrain_api_key = os.getenv('PIXELDRAIN_API_KEY')
+            self.pixeldrain_api_key = os.getenv('25a95570-0238-4b69-ad06-1303c6a31c48')
         
-        if self.pixeldrain_api_key:
-            print(f"🔑 Using Pixeldrain API key: {self.pixeldrain_api_key[:8]}...")
-        else:
-            print("ℹ️  No Pixeldrain API key (public access only)")
+        # Don't print API key status here - will print only when scraping Pixeldrain
         
     async def init_browser(self):
         """Initialize Playwright browser"""
@@ -264,6 +265,10 @@ class UniversalScraper:
     async def scrape_pixeldrain_file(self, file_id: str, output_dir: Path, filename: str = None):
         """Download a single file from Pixeldrain"""
         try:
+            # Show API key status only when actually scraping Pixeldrain
+            if self.pixeldrain_api_key:
+                print(f"🔑 Using Pixeldrain API key")
+            
             # Pixeldrain direct download URL
             download_url = f"https://pixeldrain.com/api/file/{file_id}"
             
@@ -298,6 +303,11 @@ class UniversalScraper:
     
     async def scrape_pixeldrain_list(self, list_id: str):
         """Scrape a Pixeldrain list/album"""
+        # Show API key status only when actually scraping Pixeldrain
+        if self.pixeldrain_api_key:
+            print(f"🔑 Using Pixeldrain API key: {self.pixeldrain_api_key[:8]}...")
+        else:
+            print("ℹ️  No Pixeldrain API key (public access only)")        
         print(f"📁 Scraping Pixeldrain list: https://pixeldrain.com/l/{list_id}")
         
         # Get list info via API
@@ -846,8 +856,8 @@ class ForumImageDownloader:
                     
                     # Check for specific problematic sizes
                     problematic_sizes = [
-                        (96, 96), (48, 48), (50, 62), (192, 192), 
-                        (64, 64), (128, 128), (32, 32), (112, 112),
+                        (96, 96), (48, 48), (50, 62), (192, 192),  (300, 100),
+                        (64, 64), (128, 128), (32, 32), (112, 112), (1200, 1200), (1024, 1024),
                     ]
                     
                     if (width, height) in problematic_sizes:
@@ -882,8 +892,8 @@ class ForumImageDownloader:
         
         # Skip known small/system image sizes
         size_patterns = [
-            r'50x62', r'96x96', r'192x192', r'300x100', r'48x48',
-            r'32x32', r'64x64', r'128x128', r'150x150',
+            r'50x62', r'96x96', r'192x192', r'300x100', r'48x48', r'300x100', r'1200x1200',
+            r'32x32', r'64x64', r'128x128', r'150x150', r'1024x1024',
             r'_96\.', r'_48\.', r'-96\.', r'-48\.',
             r'width=["\']?96["\']?', r'height=["\']?96["\']?',
             r'width=["\']?48["\']?', r'height=["\']?48["\']?',
@@ -2381,33 +2391,1760 @@ class GenericGalleryDownloader:
         except requests.exceptions.RequestException as e:
             print(f"✗ Error accessing page: {e}")
 
+class CoomerScraper:
+    """Scraper for coomer.st using Playwright to render the page"""
+    
+    def __init__(self, output_dir: str = "downloads"):
+        self.session = requests.Session()
+        self.download_path = output_dir
+        self.playwright = None
+        self.browser = None
+        self.context = None
+        self.headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': '*/*',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Referer': 'https://coomer.st/',
+        }
+        
+        if not os.path.exists(self.download_path):
+            os.makedirs(self.download_path)
+    
+    async def init_browser(self):
+        """Initialize Playwright browser"""
+        if self.browser:
+            return
+        
+        print("🌐 Starting browser...")
+        from playwright.async_api import async_playwright
+        
+        self.playwright = await async_playwright().start()
+        self.browser = await self.playwright.chromium.launch(
+            headless=True,
+            args=['--disable-blink-features=AutomationControlled']
+        )
+        self.context = await self.browser.new_context(
+            user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            viewport={'width': 1920, 'height': 1080}
+        )
+    
+    async def close_browser(self):
+        """Close browser"""
+        try:
+            if self.context:
+                await self.context.close()
+            if self.browser:
+                await self.browser.close()
+            if self.playwright:
+                await self.playwright.stop()
+        except:
+            pass
+    
+    async def get_rendered_page(self, url, max_retries=3):
+        """Get fully rendered page content with retry logic"""
+        if not self.browser:
+            await self.init_browser()
+        
+        page = await self.context.new_page()
+        
+        for attempt in range(max_retries):
+            try:
+                # Increased timeout to 60 seconds
+                await page.goto(url, wait_until='networkidle', timeout=60000)
+                
+                # Wait for React to render content
+                await page.wait_for_selector('article, .post, [class*="card"]', timeout=20000)
+                
+                # Additional wait for dynamic content
+                await asyncio.sleep(2)
+                
+                # Get the rendered HTML
+                html_content = await page.content()
+                
+                await page.close()
+                return html_content
+                
+            except Exception as e:
+                error_type = type(e).__name__
+                
+                if attempt < max_retries - 1:
+                    wait_time = 5 * (attempt + 1)  # 5s, 10s, 15s
+                    print(f"  ✗ {error_type} (attempt {attempt+1}/{max_retries}), retrying in {wait_time}s...")
+                    
+                    # Close the failed page
+                    try:
+                        await page.close()
+                    except:
+                        pass
+                    
+                    # Create new page for retry
+                    page = await self.context.new_page()
+                    
+                    await asyncio.sleep(wait_time)
+                else:
+                    print(f"  ✗ {error_type} - all {max_retries} attempts failed")
+                    try:
+                        await page.close()
+                    except:
+                        pass
+                    return None
+        
+        return None
+    
+    def extract_pagination_info(self, html_content):
+        """Extract pagination information from profile page"""
+        soup = BeautifulSoup(html_content, 'html.parser')
+        
+        # Look for pagination info in the page
+        # Common pattern: "Showing 1 - 50 of 495"
+        pagination_text = soup.get_text()
+        
+        # Extract total count
+        match = re.search(r'Showing\s+\d+\s*-\s*\d+\s+of\s+(\d+)', pagination_text, re.IGNORECASE)
+        if match:
+            total_posts = int(match.group(1))
+            return total_posts
+        
+        return None
+    
+    def extract_post_links_from_html(self, html_content, base_url):
+        """Extract post links from rendered HTML"""
+        soup = BeautifulSoup(html_content, 'html.parser')
+        post_links = []
+        
+        # Find all links that contain "/post/"
+        for link in soup.find_all('a', href=True):
+            href = link['href']
+            if '/post/' in href:
+                # Convert to absolute URL
+                if href.startswith('http'):
+                    full_url = href
+                elif href.startswith('/'):
+                    parsed = urlparse(base_url)
+                    full_url = f"{parsed.scheme}://{parsed.netloc}{href}"
+                else:
+                    full_url = urljoin(base_url, href)
+                
+                if full_url not in post_links:
+                    post_links.append(full_url)
+        
+        return post_links
+    
+    async def get_all_post_links(self, profile_url):
+        """Get ALL post links from profile by following pagination"""
+        print("🔍 Loading profile page...")
+        
+        # Get first page
+        html_content = await self.get_rendered_page(profile_url)
+        
+        if not html_content:
+            print("✗ Could not load profile page")
+            return []
+        
+        # Extract total posts count
+        total_posts = self.extract_pagination_info(html_content)
+        
+        if total_posts:
+            print(f"📊 Profile has {total_posts} total posts")
+        
+        # Extract posts from first page
+        all_post_links = self.extract_post_links_from_html(html_content, profile_url)
+        print(f"✓ Extracted {len(all_post_links)} posts from page 1")
+        
+        # If we have total count, calculate pages needed
+        if total_posts and total_posts > 50:
+            pages_needed = (total_posts + 49) // 50  # Round up
+            print(f"📄 Need to scrape {pages_needed} pages total")
+            
+            # Coomer.st uses ?o=offset for pagination (o=50, o=100, etc.)
+            for page_num in range(2, pages_needed + 1):
+                offset = (page_num - 1) * 50
+                paginated_url = f"{profile_url}?o={offset}"
+                
+                print(f"  → Loading page {page_num}/{pages_needed} (offset {offset})...")
+                
+                page_html = await self.get_rendered_page(paginated_url)
+                
+                if page_html:
+                    page_posts = self.extract_post_links_from_html(page_html, profile_url)
+                    
+                    # Add only new posts (avoid duplicates)
+                    new_posts = [p for p in page_posts if p not in all_post_links]
+                    all_post_links.extend(new_posts)
+                    
+                    print(f"    ✓ Found {len(new_posts)} new posts (total: {len(all_post_links)})")
+                    
+                    # If we got no new posts, we've reached the end
+                    if len(new_posts) == 0:
+                        print(f"    ℹ No more new posts, stopping pagination")
+                        break
+                else:
+                    print(f"    ✗ Failed to load page {page_num} after all retries")
+                    print(f"    ⚠ Continuing with remaining pages...")
+                    # Don't stop entirely, continue to next page
+                
+                # Rate limiting between pages
+                await asyncio.sleep(2)
+        
+        # Summary of pagination
+        if total_posts:
+            missing = total_posts - len(all_post_links)
+            if missing > 0:
+                print(f"\n⚠ WARNING: Expected {total_posts} posts but found {len(all_post_links)}")
+                print(f"   Missing {missing} posts (likely due to failed page loads)")
+                print(f"   You can re-run the script later to get the missing posts")
+        
+        return all_post_links
+    
+    def extract_media_from_html(self, html_content, base_url):
+        """Extract media URLs from rendered post HTML"""
+        soup = BeautifulSoup(html_content, 'html.parser')
+        media_urls = set()
+        parsed_base = urlparse(base_url)
+        base_domain = f"{parsed_base.scheme}://{parsed_base.netloc}"
+        
+        # Pattern 1: All links with /data/ in them
+        for link in soup.find_all('a', href=True):
+            href = link['href']
+            if '/data/' in href:
+                if href.startswith('http'):
+                    media_urls.add(href)
+                elif href.startswith('/'):
+                    media_urls.add(f"{base_domain}{href}")
+        
+        # Pattern 2: Image tags with /data/ or /thumbnail/
+        for img in soup.find_all('img', src=True):
+            src = img['src']
+            if '/data/' in src or '/thumbnail/' in src:
+                # Convert thumbnail to full URL
+                if '/thumbnail/data/' in src:
+                    src = src.replace('/thumbnail/data/', '/data/')
+                
+                if src.startswith('http'):
+                    media_urls.add(src)
+                elif src.startswith('/'):
+                    media_urls.add(f"{base_domain}{src}")
+        
+        # Pattern 3: Video/source tags
+        for video in soup.find_all(['video', 'source'], src=True):
+            src = video['src']
+            if src.startswith('http'):
+                media_urls.add(src)
+            elif src.startswith('/'):
+                media_urls.add(f"{base_domain}{src}")
+        
+        # Pattern 4: Look for any coomer.st/data/ URLs in the HTML
+        data_pattern = r'(https?://(?:coomer\.st|coomer\.party|coomer\.su)/data/[^\s\'"<>]+)'
+        matches = re.findall(data_pattern, html_content, re.IGNORECASE)
+        media_urls.update(matches)
+        
+        return list(media_urls)
+    
+    async def download_single_post(self, post_url, user_folder):
+        """Download all media from a single post"""
+        if not self.browser:
+            await self.init_browser()
+        
+        page = await self.context.new_page()
+        failed_urls = []
+        
+        try:
+            await page.goto(post_url, wait_until='networkidle', timeout=30000)
+            
+            try:
+                await page.wait_for_selector('img[src*="/data/"], a[href*="/data/"], video', timeout=10000)
+            except:
+                await asyncio.sleep(3)
+            
+            html_content = await page.content()
+            await page.close()
+            
+            media_urls = self.extract_media_from_html(html_content, post_url)
+            
+            if not media_urls:
+                return 0, 0, []
+            
+            # DEDUPLICATE by file hash
+            seen_hashes = set()
+            unique_urls = []
+            
+            for url in media_urls:
+                hash_match = re.search(r'/([a-f0-9]{32,})', url, re.IGNORECASE)
+                if hash_match:
+                    file_hash = hash_match.group(1)
+                    if file_hash not in seen_hashes:
+                        seen_hashes.add(file_hash)
+                        unique_urls.append(url)
+                else:
+                    unique_urls.append(url)
+            
+            if len(unique_urls) < len(media_urls):
+                duplicates_removed = len(media_urls) - len(unique_urls)
+                if duplicates_removed > 0:
+                    print(f"  ℹ Removed {duplicates_removed} duplicate(s)")
+            
+            media_urls = unique_urls
+            
+            if not media_urls:
+                return 0, 0, []
+            
+            video_count = len([u for u in media_urls if any(ext in u.lower() for ext in ['.mp4', '.webm'])])
+            image_count = len(media_urls) - video_count
+            
+            print(f"  ✓ Found {len(media_urls)} unique files ({image_count} images, {video_count} videos)")
+            
+            successful = 0
+            failed = 0
+            skipped_small = 0
+            
+            for i, media_url in enumerate(media_urls, 1):
+                is_video = any(ext in media_url.lower() for ext in ['.mp4', '.webm'])
+                file_type = "VIDEO" if is_video else "IMAGE"
+                
+                filename = os.path.basename(urlparse(media_url).path)
+                if not filename or len(filename) < 5:
+                    ext = '.mp4' if is_video else '.jpg'
+                    filename = f"file_{i:03d}{ext}"
+                
+                save_path = os.path.join(user_folder, filename)
+                
+                if os.path.exists(save_path) and os.path.getsize(save_path) > 0:
+                    print(f"    [{i}/{len(media_urls)}] [{file_type}] ⊙ Exists: {filename[:35]}...")
+                    successful += 1
+                    continue
+                
+                max_retries = 5
+                retry_delay = 3
+                download_failed = True
+                
+                for attempt in range(max_retries):
+                    try:
+                        if attempt > 0:
+                            print(f"    [{i}/{len(media_urls)}] [{file_type}] Retry {attempt}/{max_retries-1}: {filename[:35]}...")
+                        else:
+                            print(f"    [{i}/{len(media_urls)}] [{file_type}] Downloading: {filename[:35]}...")
+                        
+                        timeout_duration = 180 if is_video else 90
+                        
+                        response = self.session.get(
+                            media_url, 
+                            headers=self.headers, 
+                            stream=True, 
+                            timeout=timeout_duration
+                        )
+                        
+                        if response.status_code in [500, 503]:
+                            if attempt < max_retries - 1:
+                                wait_time = retry_delay * (2 ** attempt)
+                                print(f"      ✗ HTTP {response.status_code} (waiting {wait_time}s...)")
+                                await asyncio.sleep(wait_time)
+                                continue
+                            else:
+                                print(f"      ✗ HTTP {response.status_code} (exhausted retries)")
+                                failed += 1
+                                failed_urls.append((media_url, filename, f"HTTP {response.status_code}"))
+                                break
+                        
+                        response.raise_for_status()
+                        
+                        # Get file size for progress bar
+                        total_size = int(response.headers.get('content-length', 0))
+                        
+                        # Show progress bar for files larger than 10 MB
+                        show_progress = total_size > 10 * 1024 * 1024
+                        
+                        if show_progress:
+                            # Create progress bar
+                            pbar = tqdm(
+                                total=total_size,
+                                unit='B',
+                                unit_scale=True,
+                                unit_divisor=1024,
+                                desc=f"      ⬇ {filename[:30]}",
+                                leave=False,
+                                ncols=80
+                            )
+                            
+                            with open(save_path, 'wb') as f:
+                                downloaded = 0
+                                for chunk in response.iter_content(chunk_size=8192):
+                                    if chunk:
+                                        f.write(chunk)
+                                        downloaded += len(chunk)
+                                        pbar.update(len(chunk))
+                            
+                            pbar.close()
+                        else:
+                            # No progress bar for small files
+                            with open(save_path, 'wb') as f:
+                                for chunk in response.iter_content(chunk_size=8192):
+                                    if chunk:
+                                        f.write(chunk)
+                        
+                        actual_size = os.path.getsize(save_path)
+                        
+                        min_size = 1024 if is_video else 51200
+                        
+                        if actual_size < min_size:
+                            size_kb = actual_size / 1024
+                            print(f"      ✗ Too small ({size_kb:.1f} KB)")
+                            os.remove(save_path)
+                            failed += 1
+                            skipped_small += 1
+                            failed_urls.append((media_url, filename, f"Too small: {size_kb:.1f} KB"))
+                        else:
+                            size_kb = actual_size / 1024
+                            if size_kb > 1024:
+                                print(f"      ✓ Downloaded ({size_kb/1024:.2f} MB)")
+                            else:
+                                print(f"      ✓ Downloaded ({size_kb:.1f} KB)")
+                            successful += 1
+                            download_failed = False
+                        
+                        break
+                        
+                    except requests.exceptions.Timeout:
+                        if attempt < max_retries - 1:
+                            wait_time = retry_delay * (2 ** attempt)
+                            print(f"      ✗ Timeout (waiting {wait_time}s...)")
+                            await asyncio.sleep(wait_time)
+                        else:
+                            print(f"      ✗ Timeout (exhausted retries)")
+                            failed += 1
+                            failed_urls.append((media_url, filename, "Timeout"))
+                            
+                    except requests.exceptions.HTTPError as e:
+                        status_code = e.response.status_code if hasattr(e, 'response') else 'unknown'
+                        if attempt < max_retries - 1:
+                            wait_time = retry_delay * (2 ** attempt)
+                            print(f"      ✗ HTTP {status_code} (waiting {wait_time}s...)")
+                            await asyncio.sleep(wait_time)
+                        else:
+                            print(f"      ✗ HTTP {status_code} (exhausted retries)")
+                            failed += 1
+                            failed_urls.append((media_url, filename, f"HTTP {status_code}"))
+                        
+                    except Exception as e:
+                        error_name = type(e).__name__
+                        if attempt < max_retries - 1:
+                            wait_time = retry_delay * (2 ** attempt)
+                            print(f"      ✗ {error_name} (waiting {wait_time}s...)")
+                            await asyncio.sleep(wait_time)
+                        else:
+                            print(f"      ✗ {error_name} (exhausted retries)")
+                            failed += 1
+                            failed_urls.append((media_url, filename, error_name))
+                
+                import random
+                base_delay = 1.5 if not is_video else 2.5
+                jitter = random.uniform(0, 0.5)
+                await asyncio.sleep(base_delay + jitter)
+            
+            if skipped_small > 0:
+                print(f"  ℹ Skipped {skipped_small} file(s) < 50 KB")
+            
+            return successful, failed, failed_urls
+            
+        except Exception as e:
+            print(f"  ✗ Error: {e}")
+            try:
+                await page.close()
+            except:
+                pass
+            return 0, 1, []
+    
+    async def download_user_profile_async(self, url):
+        """Download all posts from user profile (async version)"""
+        print(f"\n📥 Scraping coomer.st user profile: {url}")
+        print("-" * 60)
+        
+        try:
+            # Extract username
+            parsed = urlparse(url)
+            path_parts = parsed.path.strip('/').split('/')
+            service = path_parts[0] if len(path_parts) > 0 else 'onlyfans'
+            username = path_parts[2] if len(path_parts) > 2 else 'unknown'
+            
+            print(f"Service: {service}")
+            print(f"User: {username}")
+            print()
+            
+            # Get ALL post links with pagination
+            post_links = await self.get_all_post_links(url)
+            
+            if not post_links:
+                print("✗ No posts found on this profile")
+                print("\nThis could mean:")
+                print("  • The profile has no posts")
+                print("  • The page structure has changed")
+                print("  • Posts are loaded via infinite scroll (need to scroll down)")
+                return
+            
+            print(f"\n✓ Total posts found: {len(post_links)}")
+            
+            # Show sample
+            print("\nSample posts:")
+            for i, link in enumerate(post_links[:10], 1):
+                post_id = link.split('/post/')[-1].split('?')[0] if '/post/' in link else 'unknown'
+                print(f"  {i}. Post {post_id}")
+            if len(post_links) > 10:
+                print(f"  ... and {len(post_links) - 10} more")
+            
+            # Ask user
+            print(f"\n{'='*60}")
+            print("DOWNLOAD OPTIONS")
+            print('='*60)
+            print(f"1. Download ALL {len(post_links)} posts")
+            print(f"2. Download first N posts")
+            print(f"3. Download specific range (e.g., 1-100)")
+            print(f"4. Cancel")
+            
+            choice = input("\nChoose option (1/2/3/4): ").strip()
+            
+            if choice == '4':
+                print("Download cancelled.")
+                return
+            elif choice == '2':
+                try:
+                    n = int(input(f"How many posts? (1-{len(post_links)}): ").strip())
+                    post_links = post_links[:n]
+                    print(f"✓ Will download first {len(post_links)} posts")
+                except:
+                    print("Invalid, downloading all.")
+            elif choice == '3':
+                try:
+                    range_input = input("Enter range (e.g., 1-100 or 50-150): ").strip()
+                    if '-' in range_input:
+                        start, end = map(int, range_input.split('-'))
+                        start = max(1, start) - 1  # Convert to 0-indexed
+                        end = min(len(post_links), end)
+                        post_links = post_links[start:end]
+                        print(f"✓ Will download posts {start+1} to {end}")
+                except:
+                    print("Invalid range, downloading all.")
+            else:
+                print(f"✓ Will download all {len(post_links)} posts")
+            
+            # Create folder
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            user_folder = os.path.join(self.download_path, f"coomer_{service}_{username}_{timestamp}")
+            os.makedirs(user_folder, exist_ok=True)
+            
+            # Download each post
+            print(f"\n{'='*60}")
+            print("DOWNLOADING POSTS")
+            print('='*60)
+            
+            total_files = 0
+            total_failed = 0
+            all_failed_urls = []  # ← ADD THIS: Collect all failed URLs
+            
+            for i, post_url in enumerate(post_links, 1):
+                post_id = post_url.split('/post/')[-1].split('?')[0] if '/post/' in post_url else f'{i}'
+                print(f"\n[{i}/{len(post_links)}] Post {post_id}:")
+                
+                successful, failed, failed_urls = await self.download_single_post(post_url, user_folder)  # ← CHANGE
+                total_files += successful
+                total_failed += failed
+                
+                # ← ADD: Collect failed URLs from this post
+                if failed_urls:
+                    for url, filename, error in failed_urls:
+                        all_failed_urls.append((post_id, url, filename, error))
+                
+                await asyncio.sleep(1)
+            
+            # Summary
+            print(f"\n{'='*60}")
+            print("DOWNLOAD SUMMARY")
+            print('='*60)
+            print(f"User: {username}")
+            print(f"Service: {service}")
+            print(f"Total posts processed: {len(post_links)}")
+            print(f"Total files downloaded: {total_files}")
+            print(f"Total files failed: {total_failed}")
+            print(f"Location: {user_folder}")
+            
+            if total_files > 0:
+                print(f"\n✓ Download successful!")
+                try:
+                    if sys.platform == 'win32':
+                        os.startfile(user_folder)
+                except:
+                    pass
+            # Summary
+            print(f"\n{'='*60}")
+            print("DOWNLOAD SUMMARY")
+            print('='*60)
+            print(f"User: {username}")
+            print(f"Service: {service}")
+            print(f"Total posts processed: {len(post_links)}")
+            print(f"Total files downloaded: {total_files}")
+            print(f"Total files failed: {total_failed}")
+            print(f"Location: {user_folder}")
+            
+            # ← ADD THIS ENTIRE SECTION
+            # Save failed URLs to file
+            if all_failed_urls:
+                failed_log = os.path.join(user_folder, "failed_downloads.txt")
+                with open(failed_log, 'w', encoding='utf-8') as f:
+                    f.write(f"Failed Downloads from {username} ({service})\n")
+                    f.write(f"Downloaded: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+                    f.write(f"Total failed: {len(all_failed_urls)}\n")
+                    f.write("="*80 + "\n\n")
+                    
+                    for post_id, url, filename, error in all_failed_urls:
+                        f.write(f"Post: {post_id}\n")
+                        f.write(f"Filename: {filename}\n")
+                        f.write(f"Error: {error}\n")
+                        f.write(f"URL: {url}\n")
+                        f.write("-"*80 + "\n")
+                
+                print(f"\n⚠ {total_failed} files failed - saved to: failed_downloads.txt")
+                print(f"   You can retry these URLs individually later")
+            
+            if total_files > 0:
+                print(f"\n✓ Download successful!")
+                try:
+                    if sys.platform == 'win32':
+                        os.startfile(user_folder)
+                except:
+                    pass                
+            
+        except Exception as e:
+            print(f"✗ Error: {e}")
+            import traceback
+            traceback.print_exc()
+        finally:
+            await self.close_browser()
+    
+    async def scrape(self, url):
+        """Main entry point (async)"""
+        await self.download_user_profile_async(url)
+
+class FapelloScraper:
+    """Scraper for fapello.com profiles using Playwright"""
+    
+    def __init__(self, output_dir: str = "downloads"):
+        self.session = requests.Session()
+        self.download_path = output_dir
+        self.playwright = None
+        self.browser = None
+        self.context = None
+        self.headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': '*/*',
+            'Referer': 'https://fapello.com/',
+        }
+        
+        if not os.path.exists(self.download_path):
+            os.makedirs(self.download_path)
+    
+    async def init_browser(self):
+        """Initialize Playwright browser"""
+        if self.browser:
+            return
+        
+        print("🌐 Starting browser...")
+        from playwright.async_api import async_playwright
+        
+        self.playwright = await async_playwright().start()
+        self.browser = await self.playwright.chromium.launch(
+            headless=True,
+            args=['--disable-blink-features=AutomationControlled']
+        )
+        self.context = await self.browser.new_context(
+            user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            viewport={'width': 1920, 'height': 1080}
+        )
+    
+    async def close_browser(self):
+        """Close browser"""
+        try:
+            if self.context:
+                await self.context.close()
+            if self.browser:
+                await self.browser.close()
+            if self.playwright:
+                await self.playwright.stop()
+        except:
+            pass
+    
+    async def scroll_to_load_all(self, page, max_scrolls=100):
+        """Scroll page to load all images via infinite scroll"""
+        print("  Scrolling to load all images...")
+        
+        previous_height = 0
+        scroll_count = 0
+        no_change_count = 0
+        
+        while scroll_count < max_scrolls:
+            # Scroll to bottom
+            await page.evaluate('window.scrollTo(0, document.body.scrollHeight)')
+            await asyncio.sleep(2)  # Wait for images to load
+            
+            # Get new height
+            current_height = await page.evaluate('document.body.scrollHeight')
+            
+            if current_height == previous_height:
+                no_change_count += 1
+                if no_change_count >= 3:  # No change for 3 scrolls = done
+                    print(f"  ✓ Reached end after {scroll_count} scrolls")
+                    break
+            else:
+                no_change_count = 0
+            
+            previous_height = current_height
+            scroll_count += 1
+            
+            if scroll_count % 10 == 0:
+                print(f"  → Scrolled {scroll_count} times...")
+        
+        # Scroll back to top to ensure all images are in DOM
+        await page.evaluate('window.scrollTo(0, 0)')
+        await asyncio.sleep(1)
+    
+    def extract_profile_images(self, html_content, username):
+        """Extract all image URLs from profile with comprehensive patterns"""
+        soup = BeautifulSoup(html_content, 'html.parser')
+        img_urls = set()
+        
+        print("  🔍 Analyzing page structure...")
+        
+        # DEBUG: Save HTML to file for inspection
+        debug_file = os.path.join(self.download_path, f"debug_{username}.html")
+        with open(debug_file, 'w', encoding='utf-8') as f:
+            f.write(html_content)
+        print(f"  💾 Saved HTML to: {debug_file}")
+        
+        # Strategy 1: Find ALL image URLs in the page
+        all_image_patterns = [
+            r'(https?://[^\s"\'<>]+\.(?:jpg|jpeg|png|webp|gif)(?:\?[^\s"\'<>]*)?)',
+            r'(//[^\s"\'<>]+\.(?:jpg|jpeg|png|webp|gif)(?:\?[^\s"\'<>]*)?)',
+        ]
+        
+        for pattern in all_image_patterns:
+            matches = re.findall(pattern, html_content, re.IGNORECASE)
+            for match in matches:
+                if match.startswith('//'):
+                    match = 'https:' + match
+                img_urls.add(match)
+        
+        print(f"  → Found {len(img_urls)} total image URLs in HTML")
+        
+        # Strategy 2: Extract from img tags
+        for img in soup.find_all('img'):
+            for attr in ['src', 'data-src', 'data-original', 'data-lazy']:
+                url = img.get(attr, '')
+                if url and any(ext in url.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp']):
+                    if url.startswith('//'):
+                        url = 'https:' + url
+                    elif url.startswith('/'):
+                        url = 'https://fapello.com' + url
+                    img_urls.add(url)
+        
+        # Strategy 3: Extract from links
+        for link in soup.find_all('a', href=True):
+            href = link['href']
+            if any(ext in href.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp']):
+                if href.startswith('//'):
+                    href = 'https:' + href
+                elif href.startswith('/'):
+                    href = 'https://fapello.com' + href
+                img_urls.add(href)
+        
+        print(f"  → Total URLs collected: {len(img_urls)}")
+        
+        # NOW FILTER: Only keep images from this profile
+        filtered_urls = []
+        
+        # Analyze URL patterns
+        url_samples = list(img_urls)[:20]
+        print(f"\n  📋 Sample URLs found:")
+        for i, url in enumerate(url_samples[:10], 1):
+            print(f"     {i}. {url[:80]}...")
+        
+        # Detect the URL pattern for this profile's images
+        # Common patterns:
+        # - /content/username/####/filename.jpg
+        # - /images/username/filename.jpg  
+        # - /i/username_####.jpg
+        # - Contains username in path
+        
+        for url in img_urls:
+            url_lower = url.lower()
+            filename = os.path.basename(urlparse(url).path).lower()
+            
+            # Skip obvious UI elements
+            skip_keywords = ['button', 'logo', 'icon', 'banner', 'ad', 'welcome', 
+                           'camsoda', 'porndude', 'avatar', 'header', 'footer',
+                           'sponsor', 'promo', 'badge']
+            if any(keyword in filename for keyword in skip_keywords):
+                continue
+            
+            # Skip tiny images (UI elements are usually small)
+            if any(size in url_lower for size in ['_50x50', '_100x100', '_150x150', '50px', '100px']):
+                continue
+            
+            # Accept if URL contains username OR if it's from certain directories
+            if username.lower() in url_lower:
+                filtered_urls.append(url)
+            elif any(path in url_lower for path in ['/content/', '/images/', '/media/', '/i/']):
+                # Only accept from content directories if it looks like a real image
+                if '_' in filename or any(c.isdigit() for c in filename):
+                    # Check if it's NOT from another profile
+                    # Extract potential username from URL
+                    url_parts = url.lower().split('/')
+                    is_other_profile = False
+                    for part in url_parts:
+                        if part and part != username.lower() and len(part) > 3:
+                            # If this part looks like another username, skip
+                            if not part.isdigit() and part not in ['content', 'images', 'media', 'i', 'www', 'fapello.com']:
+                                # This might be another profile name
+                                # Only skip if we're confident
+                                if '_' in filename and part in filename:
+                                    is_other_profile = True
+                                    break
+                    
+                    if not is_other_profile:
+                        filtered_urls.append(url)
+        
+        print(f"  → After filtering: {len(filtered_urls)} profile images")
+        
+        # Remove duplicates and thumbnails
+        final_urls = set()
+        for url in filtered_urls:
+            # Convert thumbnail URLs to full-size
+            full_url = url.replace('_300px.', '.').replace('_thumb.', '.').replace('_small.', '.')
+            final_urls.add(full_url)
+        
+        print(f"  → Final count (deduplicated): {len(final_urls)}")
+        
+        # Show sample of what we're keeping
+        if final_urls:
+            print(f"\n  ✓ Sample of images to download:")
+            for i, url in enumerate(list(final_urls)[:5], 1):
+                print(f"     {i}. {os.path.basename(url)[:60]}...")
+        
+        return list(final_urls)
+    
+    async def download_images_async(self, profile_url):
+        """Download all images from Fapello profile (async with browser)"""
+        print(f"\n📥 Scraping Fapello profile: {profile_url}")
+        print("-" * 60)
+        
+        try:
+            # Extract username from URL
+            parsed = urlparse(profile_url)
+            username = parsed.path.strip('/').split('/')[-1]
+            print(f"User: {username}\n")
+            
+            # Initialize browser
+            await self.init_browser()
+            
+            # Open page
+            print("🌐 Loading profile page...")
+            page = await self.context.new_page()
+            
+            try:
+                await page.goto(profile_url, wait_until='domcontentloaded', timeout=30000)
+                
+                # Wait for content to load
+                await page.wait_for_selector('img, a[href*="jpg"]', timeout=10000)
+                
+                # Scroll to load all images
+                await self.scroll_to_load_all(page, max_scrolls=150)
+                
+                # Get the fully rendered HTML
+                html_content = await page.content()
+                
+                await page.close()
+                
+                # Extract images from this profile
+                print("\n🔍 Extracting image URLs...")
+                img_urls = self.extract_profile_images(html_content, username)
+                
+                if not img_urls:
+                    print("\n✗ No images found for this profile")
+                    print(f"\n💡 Debug tip: Check the saved HTML file to see the page structure")
+                    print(f"   File: {os.path.join(self.download_path, f'debug_{username}.html')}")
+                    return
+                
+                print(f"\n✓ Ready to download {len(img_urls)} images\n")
+                
+                # Ask for confirmation
+                print(f"{'-'*60}")
+                proceed = input(f"Download {len(img_urls)} images? (y/n): ").strip().lower()
+                if proceed not in ['y', 'yes']:
+                    print("Download cancelled.")
+                    return
+                
+                # Create folder
+                timestamp = time.strftime("%Y%m%d_%H%M%S")
+                download_folder = os.path.join(self.download_path, f"fapello_{username}_{timestamp}")
+                os.makedirs(download_folder, exist_ok=True)
+                
+                # Download images
+                print(f"\n{'='*60}")
+                print("DOWNLOADING IMAGES")
+                print('='*60)
+                
+                successful = 0
+                failed = 0
+                
+                for i, img_url in enumerate(sorted(img_urls), 1):
+                    filename = os.path.basename(urlparse(img_url).path)
+                    
+                    # Remove query parameters
+                    if '?' in filename:
+                        filename = filename.split('?')[0]
+                    
+                    if not filename or '.' not in filename:
+                        filename = f"{username}_{i:04d}.jpg"
+                    
+                    save_path = os.path.join(download_folder, filename)
+                    
+                    if os.path.exists(save_path) and os.path.getsize(save_path) > 10240:
+                        print(f"[{i}/{len(img_urls)}] ⊙ Exists: {filename[:45]}...")
+                        successful += 1
+                        continue
+                    
+                    try:
+                        print(f"[{i}/{len(img_urls)}] Downloading: {filename[:45]}...", end=' ')
+                        
+                        # Download with retries
+                        for attempt in range(3):
+                            try:
+                                img_response = self.session.get(img_url, headers=self.headers, 
+                                                               stream=True, timeout=60)
+                                img_response.raise_for_status()
+                                break
+                            except:
+                                if attempt < 2:
+                                    await asyncio.sleep(2)
+                                    continue
+                                else:
+                                    raise
+                        
+                        with open(save_path, 'wb') as f:
+                            for chunk in img_response.iter_content(chunk_size=8192):
+                                if chunk:
+                                    f.write(chunk)
+                        
+                        file_size = os.path.getsize(save_path)
+                        
+                        # Require at least 10KB for images
+                        if file_size < 10240:
+                            print(f"✗ Too small ({file_size/1024:.1f} KB)")
+                            os.remove(save_path)
+                            failed += 1
+                        else:
+                            size_kb = file_size / 1024
+                            if size_kb > 1024:
+                                print(f"✓ ({size_kb/1024:.2f} MB)")
+                            else:
+                                print(f"✓ ({size_kb:.1f} KB)")
+                            successful += 1
+                        
+                    except Exception as e:
+                        print(f"✗ {type(e).__name__}")
+                        failed += 1
+                    
+                    # Rate limiting
+                    await asyncio.sleep(0.5)
+                
+                # Summary
+                print(f"\n{'='*60}")
+                print("DOWNLOAD SUMMARY")
+                print('='*60)
+                print(f"User: {username}")
+                print(f"Successfully downloaded: {successful}/{len(img_urls)}")
+                print(f"Failed: {failed}/{len(img_urls)}")
+                print(f"Location: {download_folder}")
+                
+                if successful > 0:
+                    print(f"\n✓ Download complete!")
+                    try:
+                        if sys.platform == 'win32':
+                            os.startfile(download_folder)
+                    except:
+                        pass
+                
+            except Exception as e:
+                print(f"✗ Error loading page: {e}")
+                try:
+                    await page.close()
+                except:
+                    pass
+            
+        except Exception as e:
+            print(f"✗ Error: {e}")
+            import traceback
+            traceback.print_exc()
+        finally:
+            await self.close_browser()
+    
+    async def scrape(self, url):
+        """Main entry point (async)"""
+        await self.download_images_async(url)
+
+class PixhostScraper:
+    """Scraper for pixhost.to galleries"""
+    
+    def __init__(self, output_dir: str = "downloads"):
+        self.session = requests.Session()
+        self.download_path = output_dir
+        self.headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Referer': 'https://pixhost.to/',
+        }
+        
+        if not os.path.exists(self.download_path):
+            os.makedirs(self.download_path)
+    
+    def extract_image_urls_from_gallery(self, html_content, base_url):
+        """Extract full-size image URLs from Pixhost gallery page"""
+        soup = BeautifulSoup(html_content, 'html.parser')
+        image_urls = []
+        
+        # Method 1: Look for direct image links in the gallery
+        # Pixhost galleries often have <a> tags with href to /show/{id}
+        for link in soup.find_all('a', href=True):
+            href = link['href']
+            if '/show/' in href:
+                # Get the individual image page
+                if not href.startswith('http'):
+                    if href.startswith('/'):
+                        href = f"https://pixhost.to{href}"
+                    else:
+                        href = urljoin(base_url, href)
+                
+                # Extract full image URL from individual page
+                try:
+                    response = self.session.get(href, headers=self.headers, timeout=15)
+                    if response.status_code == 200:
+                        # Look for the full-size image in the page
+                        img_soup = BeautifulSoup(response.text, 'html.parser')
+                        
+                        # Try to find the main image (usually in an <img> tag with specific class/id)
+                        # Pattern 1: Look for img with src containing 'pixhost.to/images/'
+                        for img in img_soup.find_all('img'):
+                            src = img.get('src', '')
+                            if 'pixhost.to/images/' in src or 'img' in urlparse(src).netloc:
+                                if src.startswith('//'):
+                                    src = 'https:' + src
+                                image_urls.append(src)
+                                break
+                        
+                        # Pattern 2: Look for direct links to images
+                        if not any('pixhost.to/images/' in url for url in image_urls[-1:]):
+                            for link2 in img_soup.find_all('a', href=True):
+                                href2 = link2['href']
+                                if any(ext in href2.lower() for ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp']):
+                                    if href2.startswith('//'):
+                                        href2 = 'https:' + href2
+                                    image_urls.append(href2)
+                                    break
+                    
+                    time.sleep(0.3)  # Rate limiting
+                    
+                except Exception as e:
+                    print(f"  ⚠ Failed to get image from {href}: {e}")
+                    continue
+        
+        # Remove duplicates
+        image_urls = list(dict.fromkeys(image_urls))
+        
+        return image_urls
+    
+    def download_gallery(self, gallery_url):
+        """Download all images from a Pixhost gallery"""
+        print(f"\n📥 Scraping Pixhost gallery: {gallery_url}")
+        print("-" * 60)
+        
+        try:
+            # Extract gallery ID
+            gallery_id = gallery_url.split('/gallery/')[-1].split('?')[0]
+            print(f"Gallery ID: {gallery_id}\n")
+            
+            # Fetch gallery page
+            print("🔍 Loading gallery page...")
+            response = self.session.get(gallery_url, headers=self.headers, timeout=30)
+            response.raise_for_status()
+            
+            # Extract image URLs
+            print("📋 Extracting image URLs...")
+            image_urls = self.extract_image_urls_from_gallery(response.text, gallery_url)
+            
+            if not image_urls:
+                print("✗ No images found in this gallery")
+                return
+            
+            print(f"✓ Found {len(image_urls)} images\n")
+            
+            # Show samples
+            print("Sample images:")
+            for i, url in enumerate(image_urls[:5], 1):
+                filename = os.path.basename(urlparse(url).path)
+                print(f"  {i}. {filename[:50]}...")
+            if len(image_urls) > 5:
+                print(f"  ... and {len(image_urls) - 5} more")
+            
+            # Confirm download
+            print(f"\n{'-'*60}")
+            proceed = input(f"Download {len(image_urls)} images? (y/n): ").strip().lower()
+            if proceed not in ['y', 'yes']:
+                print("Download cancelled.")
+                return
+            
+            # Create download folder
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            download_folder = os.path.join(self.download_path, f"pixhost_{gallery_id}_{timestamp}")
+            os.makedirs(download_folder, exist_ok=True)
+            
+            # Download images
+            print(f"\n{'='*60}")
+            print("DOWNLOADING IMAGES")
+            print('='*60)
+            
+            successful = 0
+            failed = 0
+            
+            for i, img_url in enumerate(image_urls, 1):
+                filename = os.path.basename(urlparse(img_url).path)
+                
+                # Remove query parameters
+                if '?' in filename:
+                    filename = filename.split('?')[0]
+                
+                if not filename or '.' not in filename:
+                    filename = f"pixhost_{i:04d}.jpg"
+                
+                save_path = os.path.join(download_folder, filename)
+                
+                # Skip if exists
+                if os.path.exists(save_path) and os.path.getsize(save_path) > 10240:
+                    print(f"[{i}/{len(image_urls)}] ⊙ Exists: {filename[:45]}...")
+                    successful += 1
+                    continue
+                
+                try:
+                    print(f"[{i}/{len(image_urls)}] Downloading: {filename[:45]}...", end=' ')
+                    
+                    # Download with retries
+                    for attempt in range(3):
+                        try:
+                            img_response = self.session.get(img_url, headers=self.headers, 
+                                                           stream=True, timeout=60)
+                            img_response.raise_for_status()
+                            break
+                        except:
+                            if attempt < 2:
+                                time.sleep(2)
+                                continue
+                            else:
+                                raise
+                    
+                    # Save file
+                    with open(save_path, 'wb') as f:
+                        for chunk in img_response.iter_content(chunk_size=8192):
+                            if chunk:
+                                f.write(chunk)
+                    
+                    file_size = os.path.getsize(save_path)
+                    
+                    # Validate minimum size
+                    if file_size < 10240:  # 10KB minimum
+                        print(f"✗ Too small ({file_size/1024:.1f} KB)")
+                        os.remove(save_path)
+                        failed += 1
+                    else:
+                        size_kb = file_size / 1024
+                        if size_kb > 1024:
+                            print(f"✓ ({size_kb/1024:.2f} MB)")
+                        else:
+                            print(f"✓ ({size_kb:.1f} KB)")
+                        successful += 1
+                    
+                except Exception as e:
+                    print(f"✗ {type(e).__name__}")
+                    failed += 1
+                
+                # Rate limiting
+                time.sleep(0.5)
+            
+            # Summary
+            print(f"\n{'='*60}")
+            print("DOWNLOAD SUMMARY")
+            print('='*60)
+            print(f"Gallery ID: {gallery_id}")
+            print(f"Successfully downloaded: {successful}/{len(image_urls)}")
+            print(f"Failed: {failed}/{len(image_urls)}")
+            print(f"Location: {download_folder}")
+            
+            if successful > 0:
+                print(f"\n✓ Download complete!")
+                try:
+                    if sys.platform == 'win32':
+                        os.startfile(download_folder)
+                except:
+                    pass
+            
+        except Exception as e:
+            print(f"✗ Error: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def scrape(self, url):
+        """Main entry point"""
+        self.download_gallery(url)   
+
+class KemonoScraper:
+    """Scraper for kemono.party/kemono.cr/kemono.su using Playwright"""
+    
+    def __init__(self, output_dir: str = "downloads"):
+        self.session = requests.Session()
+        self.download_path = output_dir
+        self.playwright = None
+        self.browser = None
+        self.context = None
+        self.headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': '*/*',
+            'Accept-Language': 'en-US,en;q=0.9',
+        }
+        
+        if not os.path.exists(self.download_path):
+            os.makedirs(self.download_path)
+    
+    async def init_browser(self):
+        """Initialize Playwright browser"""
+        if self.browser:
+            return
+        
+        print("🌐 Starting browser...")
+        from playwright.async_api import async_playwright
+        
+        self.playwright = await async_playwright().start()
+        self.browser = await self.playwright.chromium.launch(
+            headless=True,
+            args=['--disable-blink-features=AutomationControlled']
+        )
+        self.context = await self.browser.new_context(
+            user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            viewport={'width': 1920, 'height': 1080}
+        )
+    
+    async def close_browser(self):
+        """Close browser"""
+        try:
+            if self.context:
+                await self.context.close()
+            if self.browser:
+                await self.browser.close()
+            if self.playwright:
+                await self.playwright.stop()
+        except:
+            pass
+    
+    async def get_rendered_page(self, url, max_retries=3):
+        """Get fully rendered page content with retry logic"""
+        if not self.browser:
+            await self.init_browser()
+        
+        page = await self.context.new_page()
+        
+        for attempt in range(max_retries):
+            try:
+                await page.goto(url, wait_until='networkidle', timeout=60000)
+                await page.wait_for_selector('article, .post, .card', timeout=20000)
+                await asyncio.sleep(2)
+                
+                html_content = await page.content()
+                await page.close()
+                return html_content
+                
+            except Exception as e:
+                error_type = type(e).__name__
+                
+                if attempt < max_retries - 1:
+                    wait_time = 5 * (attempt + 1)
+                    print(f"  ✗ {error_type} (attempt {attempt+1}/{max_retries}), retrying in {wait_time}s...")
+                    
+                    try:
+                        await page.close()
+                    except:
+                        pass
+                    
+                    page = await self.context.new_page()
+                    await asyncio.sleep(wait_time)
+                else:
+                    print(f"  ✗ {error_type} - all {max_retries} attempts failed")
+                    try:
+                        await page.close()
+                    except:
+                        pass
+                    return None
+        
+        return None
+    
+    def extract_post_links_from_html(self, html_content, base_url):
+        """Extract post links from rendered HTML"""
+        soup = BeautifulSoup(html_content, 'html.parser')
+        post_links = []
+        
+        # Kemono uses /service/user/id/post/postid pattern
+        for link in soup.find_all('a', href=True):
+            href = link['href']
+            if '/post/' in href:
+                # Convert to absolute URL
+                if href.startswith('http'):
+                    full_url = href
+                elif href.startswith('/'):
+                    parsed = urlparse(base_url)
+                    full_url = f"{parsed.scheme}://{parsed.netloc}{href}"
+                else:
+                    full_url = urljoin(base_url, href)
+                
+                if full_url not in post_links:
+                    post_links.append(full_url)
+        
+        return post_links
+    
+    def extract_pagination_info(self, html_content):
+        """Extract pagination information from profile page"""
+        soup = BeautifulSoup(html_content, 'html.parser')
+        
+        # Look for pagination elements
+        pagination_links = soup.find_all('a', href=True)
+        max_offset = 0
+        
+        for link in pagination_links:
+            href = link['href']
+            # Kemono uses ?o=offset pattern
+            if '?o=' in href:
+                try:
+                    offset = int(href.split('?o=')[-1].split('&')[0])
+                    max_offset = max(max_offset, offset)
+                except:
+                    pass
+        
+        return max_offset
+    
+    async def get_all_post_links(self, profile_url):
+        """Get ALL post links from profile by following pagination"""
+        print("🔍 Loading profile page...")
+        
+        # Get first page
+        html_content = await self.get_rendered_page(profile_url)
+        
+        if not html_content:
+            print("✗ Could not load profile page")
+            return []
+        
+        # Extract posts from first page
+        all_post_links = self.extract_post_links_from_html(html_content, profile_url)
+        print(f"✓ Extracted {len(all_post_links)} posts from page 1")
+        
+        # Detect pagination
+        max_offset = self.extract_pagination_info(html_content)
+        
+        if max_offset > 0:
+            # Kemono typically uses 50 posts per page
+            pages_needed = (max_offset // 50) + 1
+            print(f"📄 Need to scrape approximately {pages_needed} pages total")
+            
+            # Paginate through remaining pages
+            current_offset = 50
+            while current_offset <= max_offset:
+                paginated_url = f"{profile_url}?o={current_offset}"
+                
+                page_num = (current_offset // 50) + 1
+                print(f"  → Loading page {page_num} (offset {current_offset})...")
+                
+                page_html = await self.get_rendered_page(paginated_url)
+                
+                if page_html:
+                    page_posts = self.extract_post_links_from_html(page_html, profile_url)
+                    new_posts = [p for p in page_posts if p not in all_post_links]
+                    all_post_links.extend(new_posts)
+                    
+                    print(f"    ✓ Found {len(new_posts)} new posts (total: {len(all_post_links)})")
+                    
+                    if len(new_posts) == 0:
+                        print(f"    ℹ No more new posts, stopping pagination")
+                        break
+                else:
+                    print(f"    ✗ Failed to load page after all retries")
+                
+                current_offset += 50
+                await asyncio.sleep(2)
+        
+        return all_post_links
+    
+    def extract_media_from_html(self, html_content, base_url):
+        """Extract media URLs from rendered post HTML"""
+        soup = BeautifulSoup(html_content, 'html.parser')
+        media_urls = set()
+        parsed_base = urlparse(base_url)
+        base_domain = f"{parsed_base.scheme}://{parsed_base.netloc}"
+        
+        # Pattern 1: Links with /data/ or /files/
+        for link in soup.find_all('a', href=True):
+            href = link['href']
+            if '/data/' in href or '/files/' in href:
+                if href.startswith('http'):
+                    media_urls.add(href)
+                elif href.startswith('/'):
+                    media_urls.add(f"{base_domain}{href}")
+        
+        # Pattern 2: Image tags
+        for img in soup.find_all('img', src=True):
+            src = img['src']
+            if '/data/' in src or '/files/' in src or '/thumbnail/' in src:
+                if '/thumbnail/' in src:
+                    src = src.replace('/thumbnail/', '/data/')
+                
+                if src.startswith('http'):
+                    media_urls.add(src)
+                elif src.startswith('/'):
+                    media_urls.add(f"{base_domain}{src}")
+        
+        # Pattern 3: Video/source tags
+        for video in soup.find_all(['video', 'source'], src=True):
+            src = video['src']
+            if src.startswith('http'):
+                media_urls.add(src)
+            elif src.startswith('/'):
+                media_urls.add(f"{base_domain}{src}")
+        
+        # Pattern 4: Look for kemono data/files URLs in HTML
+        data_pattern = r'(https?://(?:kemono\.party|kemono\.cr|kemono\.su)/(?:data|files)/[^\s\'"<>]+)'
+        matches = re.findall(data_pattern, html_content, re.IGNORECASE)
+        media_urls.update(matches)
+        
+        return list(media_urls)
+    
+    async def download_single_post(self, post_url, user_folder):
+        """Download all media from a single post"""
+        if not self.browser:
+            await self.init_browser()
+        
+        page = await self.context.new_page()
+        failed_urls = []
+        
+        try:
+            await page.goto(post_url, wait_until='networkidle', timeout=30000)
+            
+            try:
+                await page.wait_for_selector('img[src*="/data/"], a[href*="/data/"], video', timeout=10000)
+            except:
+                await asyncio.sleep(3)
+            
+            html_content = await page.content()
+            await page.close()
+            
+            media_urls = self.extract_media_from_html(html_content, post_url)
+            
+            if not media_urls:
+                return 0, 0, []
+            
+            # Deduplicate
+            seen_hashes = set()
+            unique_urls = []
+            
+            for url in media_urls:
+                hash_match = re.search(r'/([a-f0-9]{32,})', url, re.IGNORECASE)
+                if hash_match:
+                    file_hash = hash_match.group(1)
+                    if file_hash not in seen_hashes:
+                        seen_hashes.add(file_hash)
+                        unique_urls.append(url)
+                else:
+                    unique_urls.append(url)
+            
+            media_urls = unique_urls
+            
+            if not media_urls:
+                return 0, 0, []
+            
+            video_count = len([u for u in media_urls if any(ext in u.lower() for ext in ['.mp4', '.webm'])])
+            image_count = len(media_urls) - video_count
+            
+            print(f"  ✓ Found {len(media_urls)} unique files ({image_count} images, {video_count} videos)")
+            
+            successful = 0
+            failed = 0
+            
+            for i, media_url in enumerate(media_urls, 1):
+                is_video = any(ext in media_url.lower() for ext in ['.mp4', '.webm'])
+                file_type = "VIDEO" if is_video else "IMAGE"
+                
+                filename = os.path.basename(urlparse(media_url).path)
+                if not filename or len(filename) < 5:
+                    ext = '.mp4' if is_video else '.jpg'
+                    filename = f"file_{i:03d}{ext}"
+                
+                save_path = os.path.join(user_folder, filename)
+                
+                if os.path.exists(save_path) and os.path.getsize(save_path) > 0:
+                    print(f"    [{i}/{len(media_urls)}] [{file_type}] ⊙ Exists: {filename[:35]}...")
+                    successful += 1
+                    continue
+                
+                max_retries = 5
+                retry_delay = 3
+                
+                for attempt in range(max_retries):
+                    try:
+                        if attempt > 0:
+                            print(f"    [{i}/{len(media_urls)}] [{file_type}] Retry {attempt}/{max_retries-1}: {filename[:35]}...", end=' ')
+                        else:
+                            print(f"    [{i}/{len(media_urls)}] [{file_type}] Downloading: {filename[:35]}...", end=' ')
+                        
+                        timeout_duration = 180 if is_video else 90
+                        
+                        # Set referer to kemono domain
+                        download_headers = self.headers.copy()
+                        download_headers['Referer'] = urlparse(media_url).scheme + '://' + urlparse(media_url).netloc + '/'
+                        
+                        response = self.session.get(
+                            media_url,
+                            headers=download_headers,
+                            stream=True,
+                            timeout=timeout_duration
+                        )
+                        
+                        if response.status_code in [500, 503]:
+                            if attempt < max_retries - 1:
+                                wait_time = retry_delay * (2 ** attempt)
+                                print(f"✗ HTTP {response.status_code} (waiting {wait_time}s...)")
+                                await asyncio.sleep(wait_time)
+                                continue
+                            else:
+                                print(f"✗ HTTP {response.status_code} (exhausted retries)")
+                                failed += 1
+                                failed_urls.append((media_url, filename, f"HTTP {response.status_code}"))
+                                break
+                        
+                        response.raise_for_status()
+                        
+                        with open(save_path, 'wb') as f:
+                            for chunk in response.iter_content(chunk_size=8192):
+                                if chunk:
+                                    f.write(chunk)
+                        
+                        actual_size = os.path.getsize(save_path)
+                        min_size = 1024 if is_video else 51200
+                        
+                        if actual_size < min_size:
+                            size_kb = actual_size / 1024
+                            print(f"✗ Too small ({size_kb:.1f} KB)")
+                            os.remove(save_path)
+                            failed += 1
+                            failed_urls.append((media_url, filename, f"Too small: {size_kb:.1f} KB"))
+                        else:
+                            size_kb = actual_size / 1024
+                            if size_kb > 1024:
+                                print(f"✓ ({size_kb/1024:.2f} MB)")
+                            else:
+                                print(f"✓ ({size_kb:.1f} KB)")
+                            successful += 1
+                        
+                        break
+                        
+                    except requests.exceptions.Timeout:
+                        if attempt < max_retries - 1:
+                            wait_time = retry_delay * (2 ** attempt)
+                            print(f"✗ Timeout (waiting {wait_time}s...)")
+                            await asyncio.sleep(wait_time)
+                        else:
+                            print(f"✗ Timeout (exhausted retries)")
+                            failed += 1
+                            failed_urls.append((media_url, filename, "Timeout"))
+                            
+                    except Exception as e:
+                        error_name = type(e).__name__
+                        if attempt < max_retries - 1:
+                            wait_time = retry_delay * (2 ** attempt)
+                            print(f"✗ {error_name} (waiting {wait_time}s...)")
+                            await asyncio.sleep(wait_time)
+                        else:
+                            print(f"✗ {error_name} (exhausted retries)")
+                            failed += 1
+                            failed_urls.append((media_url, filename, error_name))
+                
+                import random
+                base_delay = 1.5 if not is_video else 2.5
+                jitter = random.uniform(0, 0.5)
+                await asyncio.sleep(base_delay + jitter)
+            
+            return successful, failed, failed_urls
+            
+        except Exception as e:
+            print(f"  ✗ Error: {e}")
+            try:
+                await page.close()
+            except:
+                pass
+            return 0, 1, []
+    
+    async def download_user_profile_async(self, url):
+        """Download all posts from user profile (async version)"""
+        print(f"\n📥 Scraping Kemono user profile: {url}")
+        print("-" * 60)
+        
+        try:
+            # Extract service and user ID
+            parsed = urlparse(url)
+            path_parts = parsed.path.strip('/').split('/')
+            service = path_parts[0] if len(path_parts) > 0 else 'unknown'
+            user_id = path_parts[2] if len(path_parts) > 2 else 'unknown'
+            
+            print(f"Service: {service}")
+            print(f"User ID: {user_id}")
+            print()
+            
+            # Get ALL post links with pagination
+            post_links = await self.get_all_post_links(url)
+            
+            if not post_links:
+                print("✗ No posts found on this profile")
+                return
+            
+            print(f"\n✓ Total posts found: {len(post_links)}")
+            
+            # Show sample
+            print("\nSample posts:")
+            for i, link in enumerate(post_links[:10], 1):
+                post_id = link.split('/post/')[-1].split('?')[0] if '/post/' in link else 'unknown'
+                print(f"  {i}. Post {post_id}")
+            if len(post_links) > 10:
+                print(f"  ... and {len(post_links) - 10} more")
+            
+            # Ask user
+            print(f"\n{'='*60}")
+            print("DOWNLOAD OPTIONS")
+            print('='*60)
+            print(f"1. Download ALL {len(post_links)} posts")
+            print(f"2. Download first N posts")
+            print(f"3. Download specific range (e.g., 1-100)")
+            print(f"4. Cancel")
+            
+            choice = input("\nChoose option (1/2/3/4): ").strip()
+            
+            if choice == '4':
+                print("Download cancelled.")
+                return
+            elif choice == '2':
+                try:
+                    n = int(input(f"How many posts? (1-{len(post_links)}): ").strip())
+                    post_links = post_links[:n]
+                    print(f"✓ Will download first {len(post_links)} posts")
+                except:
+                    print("Invalid, downloading all.")
+            elif choice == '3':
+                try:
+                    range_input = input("Enter range (e.g., 1-100 or 50-150): ").strip()
+                    if '-' in range_input:
+                        start, end = map(int, range_input.split('-'))
+                        start = max(1, start) - 1
+                        end = min(len(post_links), end)
+                        post_links = post_links[start:end]
+                        print(f"✓ Will download posts {start+1} to {end}")
+                except:
+                    print("Invalid range, downloading all.")
+            
+            # Create folder
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            user_folder = os.path.join(self.download_path, f"kemono_{service}_{user_id}_{timestamp}")
+            os.makedirs(user_folder, exist_ok=True)
+            
+            # Download each post
+            print(f"\n{'='*60}")
+            print("DOWNLOADING POSTS")
+            print('='*60)
+            
+            total_files = 0
+            total_failed = 0
+            all_failed_urls = []
+            
+            for i, post_url in enumerate(post_links, 1):
+                post_id = post_url.split('/post/')[-1].split('?')[0] if '/post/' in post_url else f'{i}'
+                print(f"\n[{i}/{len(post_links)}] Post {post_id}:")
+                
+                successful, failed, failed_urls = await self.download_single_post(post_url, user_folder)
+                total_files += successful
+                total_failed += failed
+                
+                if failed_urls:
+                    for url, filename, error in failed_urls:
+                        all_failed_urls.append((post_id, url, filename, error))
+                
+                await asyncio.sleep(1)
+            
+            # Summary
+            print(f"\n{'='*60}")
+            print("DOWNLOAD SUMMARY")
+            print('='*60)
+            print(f"User ID: {user_id}")
+            print(f"Service: {service}")
+            print(f"Total posts processed: {len(post_links)}")
+            print(f"Total files downloaded: {total_files}")
+            print(f"Total files failed: {total_failed}")
+            print(f"Location: {user_folder}")
+            
+            # Save failed URLs to file
+            if all_failed_urls:
+                failed_log = os.path.join(user_folder, "failed_downloads.txt")
+                with open(failed_log, 'w', encoding='utf-8') as f:
+                    f.write(f"Failed Downloads from User {user_id} ({service})\n")
+                    f.write(f"Downloaded: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+                    f.write(f"Total failed: {len(all_failed_urls)}\n")
+                    f.write("="*80 + "\n\n")
+                    
+                    for post_id, url, filename, error in all_failed_urls:
+                        f.write(f"Post: {post_id}\n")
+                        f.write(f"Filename: {filename}\n")
+                        f.write(f"Error: {error}\n")
+                        f.write(f"URL: {url}\n")
+                        f.write("-"*80 + "\n")
+                
+                print(f"\n⚠ {total_failed} files failed - saved to: failed_downloads.txt")
+            
+            if total_files > 0:
+                print(f"\n✓ Download successful!")
+                try:
+                    if sys.platform == 'win32':
+                        os.startfile(user_folder)
+                except:
+                    pass
+            
+        except Exception as e:
+            print(f"✗ Error: {e}")
+            import traceback
+            traceback.print_exc()
+        finally:
+            await self.close_browser()
+    
+    async def scrape(self, url):
+        """Main entry point (async)"""
+        await self.download_user_profile_async(url)        
+
 
 async def main():
     import argparse
     
-    parser = argparse.ArgumentParser(description='Universal Scraper (Bunkr + Pixeldrain + Simpcity Forums + Generic Galleries)')
-    parser.add_argument('url', nargs='?', help='Album, file, forum thread, or gallery URL')
+    parser = argparse.ArgumentParser(description='Universal Scraper (Bunkr + Pixeldrain + Simpcity + Galleries + Coomer + Fapello + Pixhost + Kemono)')
+    parser.add_argument('url', nargs='?', help='Profile/album/thread URL')
     parser.add_argument('-o', '--output', default='downloads', help='Output directory')
-    parser.add_argument('-r', '--rate', type=int, default=5, help='Rate limit (seconds)')
-    parser.add_argument('-k', '--key', help='Pixeldrain API key (or set PIXELDRAIN_API_KEY env var)')
-    parser.add_argument('--mode', choices=['auto', 'bunkr', 'pixeldrain', 'forum', 'gallery'], default='auto',
-                       help='Force a specific scraper mode')
-    parser.add_argument('--debug', action='store_true', help='Enable debug mode for forum scraper')
+    parser.add_argument('--mode', choices=['auto', 'bunkr', 'pixeldrain', 'forum', 'gallery', 'coomer', 'fapello', 'pixhost', 'kemono'], default='auto')  # ← ADDED 'kemono'
+    parser.add_argument('--debug', action='store_true', help='Enable debug mode')
+    parser.add_argument('--key', help='Pixeldrain API key (optional)')
     
     args = parser.parse_args()
-    
-    # Create cookies directory at startup (for forum scraper)
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    cookies_dir = os.path.join(script_dir, 'cookies')
-    if not os.path.exists(cookies_dir):
-        os.makedirs(cookies_dir)
-        print(f"✓ Created cookies directory: {cookies_dir}\n")
-    
-    print("=" * 70)
-    print("UNIVERSAL SCRAPER")
-    print("Supports: Bunkr, Pixeldrain, Simpcity Forums, Generic Galleries")
-    print("=" * 70)
-    print()
     
     # Interactive mode if no URL provided
     if not args.url:
@@ -2416,51 +4153,71 @@ async def main():
         print("2. Pixeldrain album/file")
         print("3. Simpcity forum thread")
         print("4. Generic gallery (viralthots.tv, etc.)")
-        print("5. Auto-detect from URL")
+        print("5. Coomer.st (user profiles)")
+        print("6. Fapello.com (user profiles)")
+        print("7. Pixhost.to (galleries)")
+        print("8. Kemono Party (user profiles)")  # ← FIXED: Now 8
+        print("9. Auto-detect from URL")  # ← FIXED: Now 9
         
-        mode_choice = input("\nChoose option (1/2/3/4/5): ").strip()
+        mode_choice = input("\nChoose option (1-9): ").strip()
         
         url = input("Enter URL: ").strip()
         
-        if mode_choice == '1':
-            args.mode = 'bunkr'
-        elif mode_choice == '2':
-            args.mode = 'pixeldrain'
-        elif mode_choice == '3':
-            args.mode = 'forum'
-        elif mode_choice == '4':
-            args.mode = 'gallery'
-        else:
-            args.mode = 'auto'
+        mode_map = {
+            '1': 'bunkr',
+            '2': 'pixeldrain',
+            '3': 'forum',
+            '4': 'gallery',
+            '5': 'coomer',
+            '6': 'fapello',
+            '7': 'pixhost',
+            '8': 'kemono',  # ← ADDED
+        }
         
+        args.mode = mode_map.get(mode_choice, 'auto')
         args.url = url
     
     # Auto-detect mode if not specified
     if args.mode == 'auto':
         url_lower = args.url.lower()
-        if 'simpcity' in url_lower or '/threads/' in url_lower:
+        if 'kemono' in url_lower:
+            args.mode = 'kemono'
+        elif 'pixhost' in url_lower:
+            args.mode = 'pixhost'
+        elif 'fapello' in url_lower:
+            args.mode = 'fapello'
+        elif 'coomer' in url_lower:
+            args.mode = 'coomer'
+        elif 'simpcity' in url_lower or '/threads/' in url_lower:
             args.mode = 'forum'
         elif 'pixeldrain' in url_lower:
             args.mode = 'pixeldrain'
         elif 'bunkr' in url_lower:
             args.mode = 'bunkr'
-        elif any(keyword in url_lower for keyword in ['viralthots', 'album', 'gallery', 'photos', 'video']):
-            args.mode = 'gallery'
         else:
-            # Try to detect from URL structure
-            if '/threads/' in args.url or '/forums/' in args.url:
-                args.mode = 'forum'
-            elif '/album/' in args.url or '/gallery/' in args.url or '/video/' in args.url:
-                args.mode = 'gallery'
-            else:
-                print("⚠ Could not auto-detect mode. Defaulting to generic gallery scraper.")
-                args.mode = 'gallery'
+            args.mode = 'gallery'
     
     # Run appropriate scraper
-    if args.mode == 'forum':
+    if args.mode == 'kemono':
+        print("🔧 Mode: Kemono Party Scraper\n")
+        scraper = KemonoScraper(output_dir=args.output)
+        await scraper.scrape(args.url)    
+    elif args.mode == 'pixhost':
+        print("🔧 Mode: Pixhost Gallery Scraper\n")
+        scraper = PixhostScraper(output_dir=args.output)
+        scraper.download_gallery(args.url)
+    elif args.mode == 'fapello':
+        print("🔧 Mode: Fapello Scraper\n")
+        scraper = FapelloScraper(output_dir=args.output)
+        await scraper.scrape(args.url)
+    elif args.mode == 'forum':
         print("🔧 Mode: Simpcity Forum Scraper\n")
         downloader = ForumImageDownloader(output_dir=args.output, debug_mode=args.debug)
         downloader.download_images(args.url)
+    elif args.mode == 'coomer':
+        print("🔧 Mode: Coomer.st Scraper\n")
+        scraper = CoomerScraper(output_dir=args.output)
+        await scraper.scrape(args.url)
     elif args.mode == 'gallery':
         print("🔧 Mode: Generic Gallery Scraper\n")
         downloader = GenericGalleryDownloader(output_dir=args.output)
@@ -2468,8 +4225,7 @@ async def main():
     else:
         print(f"🔧 Mode: Bunkr/Pixeldrain Scraper\n")
         scraper = UniversalScraper(
-            output_dir=args.output, 
-            rate_limit=args.rate,
+            output_dir=args.output,
             pixeldrain_api_key=args.key
         )
         await scraper.scrape(args.url)
@@ -2478,7 +4234,6 @@ async def main():
     print("=" * 70)
     print("Complete!")
     print("=" * 70)
-
 
 if __name__ == "__main__":
     asyncio.run(main())
