@@ -1,6 +1,6 @@
 # Universal Media Scraper - Windows Installation & Usage Guide
 
-A Python-based scraper that downloads images and videos from Bunkr, Pixeldrain, Simpcity forums, and generic gallery sites.
+A Python-based scraper that downloads images and videos from Bunkr, Pixeldrain, Simpcity forums, Coomer.st, Fapello, Pixhost, Kemono Party, and generic gallery sites.
 
 ## ⚠️ Important Legal Notice
 
@@ -28,9 +28,25 @@ A Python-based scraper that downloads images and videos from Bunkr, Pixeldrain, 
 
 ---
 
+## 🆕 What's New in v3.0
+
+**New Supported Sites:**
+- ✨ **Coomer.st** - Download user profiles with post selection
+- ✨ **Fapello** - User profile scraping with automatic pagination
+- ✨ **Pixhost** - Gallery downloads with full-resolution images
+- ✨ **Kemono Party** - Creator profile downloads from multiple platforms
+
+**Enhanced Features:**
+- 9 scraper modes in interactive menu (up from 5)
+- Post range selection for Coomer and Kemono
+- Improved error logging with failed download reports
+- Better organization with post-based folder structures
+
+---
+
 ## ✨ Features
 
-- **Multi-site support**: Bunkr, Pixeldrain, Simpcity forums, viralthots.tv, and generic galleries
+- **Multi-site support**: Bunkr, Pixeldrain, Simpcity forums, Coomer.st, Fapello, Pixhost, Kemono Party, viralthots.tv, and generic galleries
 - **Automatic detection**: Detects site type and uses appropriate scraper
 - **Bulk downloads**: Download entire albums, threads, or galleries
 - **Smart filtering**: Removes thumbnails, avatars, and duplicate images
@@ -194,7 +210,7 @@ You'll see:
 ```
 ======================================================================
 UNIVERSAL SCRAPER
-Supports: Bunkr, Pixeldrain, Simpcity Forums, Generic Galleries
+Supports: Bunkr, Pixeldrain, Simpcity, Coomer, Fapello, Pixhost, Kemono, Galleries
 ======================================================================
 
 Choose scraper mode:
@@ -202,9 +218,13 @@ Choose scraper mode:
 2. Pixeldrain album/file
 3. Simpcity forum thread
 4. Generic gallery (viralthots.tv, etc.)
-5. Auto-detect from URL
+5. Coomer.st (user profiles)
+6. Fapello.com (user profiles)
+7. Pixhost.to (galleries)
+8. Kemono Party (user profiles)
+9. Auto-detect from URL
 
-Choose option (1/2/3/4/5):
+Choose option (1-9):
 ```
 
 Then enter your URL when prompted.
@@ -247,6 +267,26 @@ python universal_scraper.py https://simpcity.su/threads/thread-name.12345/
 python universal_scraper.py https://viralthots.tv/video/12345/
 ```
 
+**Coomer.st User Profile:**
+```cmd
+python universal_scraper.py https://coomer.st/onlyfans/user/username
+```
+
+**Fapello User Profile:**
+```cmd
+python universal_scraper.py https://fapello.com/username/
+```
+
+**Pixhost Gallery:**
+```cmd
+python universal_scraper.py https://pixhost.to/gallery/GALLERY_ID
+```
+
+**Kemono Party User:**
+```cmd
+python universal_scraper.py https://kemono.su/patreon/user/12345678
+```
+
 **Custom Output Directory:**
 ```cmd
 python universal_scraper.py https://bunkr.site/a/xyz123 -o D:\My_Downloads
@@ -271,7 +311,7 @@ python universal_scraper.py https://simpcity.su/threads/name.123/ --mode forum -
 | `-o DIR` | Output directory | `downloads` |
 | `-r SECONDS` | Rate limit between requests | `5` |
 | `-k KEY` | Pixeldrain API key | None |
-| `--mode MODE` | Force mode: `auto`, `bunkr`, `pixeldrain`, `forum`, `gallery` | `auto` |
+| `--mode MODE` | Force mode: `auto`, `bunkr`, `pixeldrain`, `forum`, `gallery`, `coomer`, `fapello`, `pixhost`, `kemono` | `auto` |
 | `--debug` | Enable debug mode (saves HTML) | Off |
 
 ---
@@ -346,6 +386,102 @@ python universal_scraper.py https://pixeldrain.com/l/abc123 -k pd_api_xxxxxxxxxx
 - iframe embed scraping
 - Multiple resolution versions
 - Video size filtering
+
+---
+
+### 5. Coomer.st
+**Supported URLs:**
+- User profiles: `https://coomer.st/onlyfans/user/USERNAME`
+- User profiles: `https://coomer.st/SERVICE/user/USERNAME`
+
+**Features:**
+- Downloads all posts from a user profile
+- Support for multiple services (OnlyFans, Patreon, etc.)
+- Video and image downloads
+- Post-by-post organization
+- Range selection (download specific posts)
+
+**Usage:**
+```cmd
+python universal_scraper.py https://coomer.st/onlyfans/user/username --mode coomer
+```
+
+**Notes:**
+- Can download all posts or select specific ranges
+- Downloads organized by post
+- Failed downloads logged to file
+
+---
+
+### 6. Fapello
+**Supported URLs:**
+- User profiles: `https://fapello.com/USERNAME/`
+
+**Features:**
+- Downloads all content from user profiles
+- Image and video support
+- Automatic pagination through all pages
+- Smart file naming
+
+**Usage:**
+```cmd
+python universal_scraper.py https://fapello.com/username/ --mode fapello
+```
+
+**Notes:**
+- No authentication required for public profiles
+- Automatically handles multi-page profiles
+
+---
+
+### 7. Pixhost
+**Supported URLs:**
+- Gallery pages: `https://pixhost.to/gallery/GALLERY_ID`
+
+**Features:**
+- Full-resolution image downloads
+- Automatic thumbnail filtering
+- Gallery metadata extraction
+
+**Usage:**
+```cmd
+python universal_scraper.py https://pixhost.to/gallery/abc123 --mode pixhost
+```
+
+**Notes:**
+- Synchronous downloads (not async)
+- Works with public galleries
+
+---
+
+### 8. Kemono Party
+**Supported URLs:**
+- User profiles: `https://kemono.su/SERVICE/user/USER_ID`
+- Example: `https://kemono.su/patreon/user/12345678`
+
+**Features:**
+- Downloads all posts from creator profiles
+- Support for multiple platforms (Patreon, Fanbox, etc.)
+- Image and video downloads
+- Attachment downloads
+- Post selection options (all, first N, last N, range)
+- Failed download logging
+
+**Usage:**
+```cmd
+python universal_scraper.py https://kemono.su/patreon/user/12345678 --mode kemono
+```
+
+**Post Selection Options:**
+When prompted, you can:
+1. Download all posts
+2. Download first N posts
+3. Download specific range (e.g., posts 10-50)
+
+**Notes:**
+- Automatically detects service and user ID
+- Downloads organized by post
+- Generates failed_downloads.txt if any downloads fail
 
 ---
 
@@ -1314,8 +1450,8 @@ The authors:
 
 ---
 
-**Version**: 2.0  
-**Last Updated**: December 2024  
+**Version**: 3.0  
+**Last Updated**: January 2025  
 **Python Version**: 3.8+  
 **Tested On**: Windows 10/11 64-bit  
 **License**: Educational Use Only
@@ -1326,6 +1462,3 @@ The authors:
 
 
 *Remember: With great power comes great responsibility. Use wisely.*
-
-
-
